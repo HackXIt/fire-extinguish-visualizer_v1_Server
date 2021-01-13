@@ -1,0 +1,105 @@
+from flask import Flask, jsonify, request
+from flask_cors import CORS, cross_origin
+from time import sleep
+
+ports = {
+    "SER1": {
+        'SERIN': 3,
+        'SRCK': 5,
+        'RCK': 7,
+        'G': 11,
+        'CLR': 13,
+    },
+    "SER2": {
+        'SERIN': 8,
+        'SRCK': 10,
+        'RCK': 12,
+        'G': 16,
+        'CLR': 18
+    },
+    "SER3": {
+        'SERIN': 29,
+        'SRCK': 31,
+        'RCK': 33,
+        'G': 35,
+        'CLR': 37
+    },
+    "SER4": {
+        'SERIN': 22,
+        'SRCK': 24,
+        'RCK': 26,
+        'G': 32,
+        'CLR': 36
+    }
+}
+pinStates = {
+    "SER1": [0, 0, 0, 0, 0, 0, 0, 0],
+    "SER2": [0, 0, 0, 0, 0, 0, 0, 0],
+    "SER3": [0, 0, 0, 0, 0, 0, 0, 0],
+    "SER4": [0, 0, 0, 0, 0, 0, 0, 0]
+}
+app = Flask(__name__)
+# app.config['SECRET_KEY'] = 'the quick brown fox jumps over the lazy dog'
+# app.config['CORS_HEADERS'] = 'Content-Type'
+
+# CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)
+
+
+@app.route('/setup', methods=['POST'])
+def setup():
+    response = {'status': 'success'}
+    if request.method == 'POST':
+        print("Received Setup-Data:")
+        data = request.get_json()
+        print(data["submissions"])
+    return jsonify(response)
+
+
+@app.route('/cleanup', methods=['POST'])
+def cleanup():
+    response = {'status': 'success'}
+    if request.method == 'POST':
+        print("Cleaning GPIOs")
+        # GPIO.cleanup()
+    return jsonify(response)
+
+
+@app.route('/shift', methods=['POST'])
+def shift():
+    response = {'status': 'success', 'State': []}
+    if request.method == 'POST':
+        data = request.get_json()
+        pinStates[data['port']][len(
+            pinStates[data['port']]) - data['pin']] ^= 1
+        """
+        for val in pinStates[data['port']]:
+            GPIO.output(ports[data['port']]['SERIN'], val)
+            sleep(0.02)
+            GPIO.output(ports[data['port']]['SRCK'], GPIO.HIGH)
+            sleep(0.02)
+            GPIO.output(ports[data['port']]['SRCK'], GPIO.LOW)
+        GPIO.output(ports[data['port']]['RCK'], GPIO.HIGH)
+        sleep(0.02)
+        """
+        response['State'] = pinStates[data['port']]
+    return jsonify(response)
+
+
+"""
+        for val in pinStates[data['port']]:
+            GPIO.output(ports[data['port']]['SERIN'], val)
+            sleep(0.02)
+            GPIO.output(ports[data['port']]['SRCK'], GPIO.HIGH)
+            sleep(0.02)
+            GPIO.output(ports[data['port']]['SRCK'], GPIO.LOW)
+        GPIO.output(ports[data['port']]['RCK'], GPIO.HIGH)
+        sleep(0.02)
+        GPIO.output(ports[data['port']]['RCK'], GPIO.LOW)
+"""
+
+if __name__ == '__main__':
+    try:
+        app.run(host="127.0.0.1", port="5000")
+    except Exception as e:
+        print(e)

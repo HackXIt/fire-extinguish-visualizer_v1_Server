@@ -1,0 +1,243 @@
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import RPi.GPIO as GPIO
+from time import sleep
+
+ports = {
+    "SER1": {
+        'SERIN': 3,
+        'SRCK': 5,
+        'RCK': 7,
+        'G': 11,
+        'CLR': 13,
+    },
+    "SER2": {
+        'SERIN': 8,
+        'SRCK': 10,
+        'RCK': 12,
+        'G': 16,
+        'CLR': 18
+    },
+    "SER3": {
+        'SERIN': 29,
+        'SRCK': 31,
+        'RCK': 33,
+        'G': 35,
+        'CLR': 37
+    },
+    "SER4": {
+        'SERIN': 22,
+        'SRCK': 24,
+        'RCK': 26,
+        'G': 32,
+        'CLR': 36
+    }
+}
+pinStates = {
+    "SER1": [0, 0, 0, 0, 0, 0, 0, 0],
+    "SER2": [0, 0, 0, 0, 0, 0, 0, 0],
+    "SER3": [0, 0, 0, 0, 0, 0, 0, 0],
+    "SER4": [0, 0, 0, 0, 0, 0, 0, 0]
+}
+_clr = [ports['SER1']['CLR'], ports['SER2']['CLR'],
+        ports['SER3']['CLR'], ports['SER4']['CLR'], ]
+_g = [ports['SER1']['G'], ports['SER2']['G'],
+      ports['SER3']['G'], ports['SER4']['G'], ]
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False)
+GPIO.setup(list(ports['SER1'].values()), GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(list(ports['SER2'].values()), GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(list(ports['SER3'].values()), GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(list(ports['SER4'].values()), GPIO.OUT, initial=GPIO.LOW)
+# Setting all CLR and G to HIGH
+GPIO.output(_clr, GPIO.HIGH)
+GPIO.output(_g, GPIO.HIGH)
+
+app = Flask(__name__)
+CORS(app)
+
+
+@app.route('/togglePort', methods=['POST'])
+@crossdomain(origin='*')
+def togglePort():
+    response = {'status': 'success'}
+    if request.method == 'POST':
+        data = request.get_json()
+        GPIO.output(ports[data['port']]['G'], data['trigger'])
+    return jsonify(response)
+
+
+@app.route('/shift', methods=['POST'])
+@crossdomain(origin='*')
+def shift():
+    response = {'status': 'success'}
+    if request.method == 'POST':
+        data = request.get_json()
+        pinStates[data['port']][len(pinStates[data['port']]) - data['pin']] ^= 1
+        for val in pinStates[data['port']]:
+            GPIO.output(ports[data['port']]['SERIN'], val)
+            sleep(0.02)
+            GPIO.output(ports[data['port']]['SRCK'], GPIO.HIGH)
+            sleep(0.02)
+            GPIO.output(ports[data['port']]['SRCK'], GPIO.LOW)
+        GPIO.output(ports[data['port']]['RCK'], GPIO.HIGH)
+        sleep(0.02)
+        GPIO.output(ports[data['port']]['RCK'], GPIO.LOW)
+    return jsonify(response)
+
+
+if __name__ == '__main__':
+    try:
+        app.run(host="127.0.0.1", port="5000")
+    except Exception as e:
+        print(e)
+        GPIO.cleanup()
+    GPIO.cleanup()
+server {
+    listen      80;
+    server_name fire.com;
+    charset utf-8;
+    root    /var/www/fire-extinguish-visualizer/dist;
+    index   index.html index.htm;    # Always serve index.html for any request
+    location / {
+        try_files $uri /index.html @fireFlask;
+    }
+    location /static {
+	root /var/www/fire-extinguish-visualizer/dist/;
+    }
+    location @fireFlask {
+	include uwsgi_params;
+	uwsgi_pass unix:/var/www/fire-extinguish-visualizer/server/app_uwsgi.sock;
+    }
+    error_log  /var/log/nginx/vue-app-error.log;
+    access_log /var/log/nginx/vue-app-access.log;
+}
+#!/usr/bin/env python
+
+import RPi.GPIO as GPIO
+from time import sleep
+import argparse
+
+ports = {
+    "SER1": {
+        'SERIN': 3,
+        'SRCK': 5,
+        'RCK': 7,
+        'G': 11,
+        'CLR': 13
+    },
+    "SER2": {
+        'SERIN': 8,
+        'SRCK': 10,
+        'RCK': 12,
+        'G': 16,
+        'CLR': 18
+    },
+    "SER3": {
+        'SERIN': 29,
+        'SRCK': 31,
+        'RCK': 33,
+        'G': 35,
+        'CLR': 37
+    },
+    "SER4": {
+        'SERIN': 22,
+        'SRCK': 24,
+        'RCK': 26,
+        'G': 32,
+        'CLR': 36
+    }
+}
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "pins",
+    type=int,
+    help="The pin(s) that should be set.",
+    nargs="+",
+    choices=range(1, 9)
+)
+parser.add_argument(
+    "-p",
+    "--port",
+    help="(required) Serial port number that the board is attached to.",
+    required=True,
+    dest="port",
+    choices=ports.keys()
+)
+parser.add_argument(
+    "-r",
+    "--reset",
+    help="Flag this if you want to reset the pin(s)",
+    action="store_true"
+)
+args = parser.parse_args()
+GPIO.setmode(GPIO.BOARD)
+GPIO.setup(list(ports[args.port].values()), GPIO.OUT)
+
+out = [0, 0, 0, 0, 0, 0, 0, 0]
+
+if args.reset:
+    for pin in args.pins:
+        out[len(out) - pin] = 0
+else:
+    for pin in args.pins:
+        out[len(out) - pin] = 1
+
+GPIO.output(ports[args.port]['CLR'], GPIO.HIGH)
+GPIO.output(ports[args.port]['G'], GPIO.HIGH)
+
+for val in out:
+    print(val)
+    GPIO.output(ports[args.port]['SERIN'], val)
+    sleep(0.02)
+    GPIO.output(ports[args.port]['SRCK'], GPIO.HIGH)
+    sleep(0.02)
+    GPIO.output(ports[args.port]['SRCK'], GPIO.LOW)
+
+GPIO.output(ports[args.port]['RCK'], GPIO.HIGH)
+sleep(0.02)
+GPIO.output(ports[args.port]['RCK'], GPIO.LOW)
+GPIO.output(ports[args.port]['G'], GPIO.LOW)
+
+sleep(5)
+GPIO.cleanup()
+[uwsgi]
+#application's base folder
+base = /var/www/fire-extinguish-visualizer/server
+
+#python module to import
+app = app
+module = %(app)
+
+home = %(base)/env
+pythonpath = %(base)
+
+#socket file's location
+socket = /var/www/fire-extinguish-visualizer/server/%n.sock
+
+#permissions for the socket file
+chmod-socket = 666
+
+#the variable that holds a flask application inside the module imported at line #6
+callable = app
+
+#location of log files
+logto = /var/log/uwsgi/%n.log
+[Unit]
+Description=uWSGI Emperor service
+After=syslog.target
+
+[Service]
+ExecStart=/var/www/fire-extinguish-visualizer/server/env/bin/uwsgi --master --emperor /etc/uwsgi/vassals --die-on-term --uid www-data --gid www-data --logto /var/log/uwsgi/emporer.log
+ExecReload=/bin/kill -HUP %MAINPID
+ExecStop=/bin/kill -INT $MAINPID
+Restart=always
+KillSignal=SIGQUIT
+Type=notify
+StandardError=syslog
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target
+
